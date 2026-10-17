@@ -1,0 +1,167 @@
+name: Build Box64 v0.4.4 for ARM64
+
+# Compila Box64 v0.4.4 para ARM64 (Linux ARM64 nativo, ruta A de docs/COMPILE.md)
+# con cross-compiler gcc-aarch64-linux-gnu y smoke test bajo qemu-aarch64-static.
+#
+# Esto aísla la compilación pesada del teléfono y permite depurar fallos
+# de build sin consumir recursos del S20 FE.
+#
+# El binario producido aquí NO es el binario final de B0 (B0 debe compilar
+# en el dispositivo), pero sirve para:
+#   - Verificar que v0.4.4 compila con la configuración especificada
+#   - Detectar errores de compilación reproducibles
+#   - Producir un binario ARM64 ejecutable bajo qemu para smoke tests
+#   - Conservar logs de cmake y make como artefactos
+
+on:
+  workflow_dispatch:
+    inputs:
+      box64_tag:
+        description: 'Box64 tag to build (default v0.4.4)'
+        required: true
+        default: 'v0.4.4'
+        type: string
+      cmake_extra:
+        description: 'Extra CMake flags (optional)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate inputs
+        run: |
+          TAG='${{ inputs.box64_tag }}'
+          if [ -z "$TAG" ]; then
+            echo "::error::box64_tag is required"
+            exit 1
+          fi
+          echo "box64_tag=$TAG" >> "$GITHUB_ENV"
+          echo "cmake_extra=${{ inputs.cmake_extra }}" >> "$GITHUB_ENV"
+
+      - name: Install cross toolchain and qemu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu \
+            qemu-user-static \
+            binutils-aarch64-linux-gnu \
+            cmake \
+            git \
+            python3
+
+      - name: Resolve Box64 tag to commit hash
+        id: resolve
+        run: |
+          mkdir -p "$HOME/work"
+          cd "$HOME/work"
+          git clone --filter=blob:none --no-checkout https://github.com/ptitSeb/box64.git box64
+          cd box64
+          git fetch --tags --depth=1 origin "$box64_tag"
+          HASH=$(git rev-parse "$box64_tag")
+          if ! echo "$HASH" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::tag $box64_tag did not resolve to 40 hex chars: $HASH"
+            exit 1
+          fi
+          git checkout "$HASH"
+          echo "box64_hash=$HASH" >> "$GITHUB_ENV"
+          echo "=== Box64 pin resolved ==="
+          echo "tag:  $box64_tag"
+          echo "hash: $HASH"
+          git log -1 --format="date:    %ai%nauthor:  %an <%ae>%nsubject: %s"
+
+      - name: Configure CMake (Ruta A, -DARM64=1 -DBAD_SIGNAL=ON)
+        run: |
+          mkdir -p "$HOME/work/box64/build"
+          cd "$HOME/work/box64/build"
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+            -DARM64=1 \
+            -DBAD_SIGNAL=ON \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            ${{ env.cmake_extra }} \
+            > cmake.log 2>&1
+          echo "=== cmake exit=$? ==="
+          echo "=== cmake.log (last 40 lines) ==="
+          tail -40 cmake.log
+          test -f Makefile || { echo "::error::CMake did not produce Makefile"; exit 1; }
+
+      - name: Build (make -j$(nproc))
+        run: |
+          cd "$HOME/work/box64/build"
+          make -j"$(nproc)" > make.log 2>&1
+          MAKE_EXIT=$?
+          echo "=== make exit=$MAKE_EXIT ==="
+          echo "=== make.log (last 60 lines) ==="
+          tail -60 make.log
+          if [ $MAKE_EXIT -ne 0 ]; then
+            echo "::error::make failed with exit $MAKE_EXIT"
+            exit 1
+          fi
+          test -x box64 || { echo "::error::box64 binary not produced"; ls -la; exit 1; }
+          echo "=== box64 binary ==="
+          file box64
+          ls -la box64
+
+      - name: Verify ARM64 binary
+        run: |
+          cd "$HOME/work/box64/build"
+          HDR=$(readelf -h box64)
+          echo "$HDR" | grep -E "Class:|Machine:"
+          echo "$HDR" | grep -qE "Class:.*ELF64" || { echo "::error::not ELF64"; exit 1; }
+          echo "$HDR" | grep -qE "Machine:.*AArch64" || { echo "::error::not AArch64"; exit 1; }
+          echo "OK: ARM64 binary verified"
+
+      - name: Smoke test under qemu-aarch64-static
+        run: |
+          cd "$HOME/work/box64/build"
+          echo "=== box64 --version ==="
+          qemu-aarch64-static -L /usr/aarch64-linux-gnu ./box64 --version 2>&1 | head -5
+          echo ""
+          echo "=== qemu exit handling ==="
+          qemu-aarch64-static -L /usr/aarch64-linux-gnu ./box64 --version > version.log 2>&1
+          echo "exit=$?"
+          cat version.log
+
+      - name: Pack artifacts
+        run: |
+          mkdir -p artifacts
+          cp "$HOME/work/box64/build/box64" artifacts/box64-arm64-v0.4.4
+          cp "$HOME/work/box64/build/cmake.log" artifacts/
+          cp "$HOME/work/box64/build/make.log" artifacts/
+          cp "$HOME/work/box64/build/version.log" artifacts/ 2>/dev/null || true
+          {
+            echo "box64_repo=https://github.com/ptitSeb/box64.git"
+            echo "box64_tag=${box64_tag}"
+            echo "box64_hash=${box64_hash}"
+            echo "build_runner=$(uname -a)"
+            echo "build_date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "cmake_config=-DARM64=1 -DBAD_SIGNAL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc"
+            echo "cmake_extra=${cmake_extra}"
+            echo "sha256_box64=$(sha256sum artifacts/box64-arm64-v0.4.4 | cut -d' ' -f1)"
+          } > artifacts/build_metadata.txt
+          echo "=== artifacts ==="
+          ls -la artifacts/
+          echo ""
+          cat artifacts/build_metadata.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: box64-arm64-v0.4.4
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 90

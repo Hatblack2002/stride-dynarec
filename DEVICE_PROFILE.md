@@ -38,6 +38,24 @@ Fuente de verdad del hardware y del pin. Cerrado el 2026-10-18 por el director t
 - El commit `27860e6` (main del día) es un parche RISC-V; no toca la ruta ARM64.
 - Una línea base debe ser un punto fijo, no un snapshot de main.
 
+## Observación: binarios CoreMark idénticos (para revisar en B2)
+
+Los binarios `benchmarks/coremark_x86_64` y `benchmarks/coremark_x86_64_brief` comparten el mismo SHA-256:
+
+```
+7866b2d8aa3b41ce71faa62f6c7ec8579ccc3824880a3d15f318e61d6121f8df
+```
+
+Causa: en CoreMark, `ITERATIONS` es un valor por defecto que se establece en tiempo de compilación mediante `-DITERATIONS=N`, pero el binario acepta un argumento de iteraciones en línea de comandos. Cuando se ejecuta **sin argumentos** (como exige la especificación, sección E paso 5), CoreMark escala internamente el número de iteraciones hasta alcanzar el mínimo de 10 segundos requerido para un resultado válido (`core_main.c:376`).
+
+En consecuencia, el valor `ITERATIONS=2000` vs `ITERATIONS=10` en tiempo de compilación no produce binarios distintos ni cambia el comportamiento en ejecución: ambos binarios ejecutan el mismo número efectivo de iteraciones cuando se lanzan sin argumentos.
+
+**Implicación para B0:** ninguna. La condición 7 (`Correct operation validated`) se cumple con cualquiera de los dos binarios, porque ambos autoescalan a ≥10s.
+
+**Implicación para B2:** el binario `coremark_x86_64_brief` no aporta una variante de menor duración. Si B2 requiere una variante breve (por ejemplo, para mediciones de inicio en frío que no busquen el steady-state), debe construirse con un mecanismo distinto al flag `ITERATIONS` en tiempo de compilación. Esto se decide cuando se abra la discusión de B2.
+
+No se modifica nada en esta fase. Los dos binarios se conservan tal como los publicó el workflow.
+
 ## Capas fuera de alcance en B0
 
 - Wine (LGPL) — compatibilidad Windows.
