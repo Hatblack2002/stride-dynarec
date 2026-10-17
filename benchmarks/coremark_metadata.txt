@@ -1,0 +1,8 @@
+coremark_repo=https://github.com/eembc/coremark
+coremark_sha=1f483d5b8316753a742cbf5590caf5bd0a4e4777
+compiler=gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+build_flags=PORT_DIR=linux ITERATIONS=<2000|10> LFLAGS_END='-static -lrt' CC=gcc
+coremark_x86_64_sha256=7866b2d8aa3b41ce71faa62f6c7ec8579ccc3824880a3d15f318e61d6121f8df
+coremark_x86_64_brief_sha256=7866b2d8aa3b41ce71faa62f6c7ec8579ccc3824880a3d15f318e61d6121f8df
+build_runner=Linux runnervm8k3b6 6.17.0-1022-azure #22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+build_date_utc=2026-10-17T21:16:28Z
