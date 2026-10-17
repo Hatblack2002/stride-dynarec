@@ -1,0 +1,11 @@
+# .gitignore
+third_party/
+build/
+*.o
+*.so
+*.a
+*.log
+*.tmp
+.DS_Store
+__pycache__/
+.cache/
