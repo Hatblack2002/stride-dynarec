@@ -162,12 +162,13 @@ if [ ! -f "$CM_BIN" ]; then
   exit 3
 fi
 
-if ! readelf -h "$CM_BIN" 2>/dev/null | grep -q "Class:.*ELF64"; then
+CM_HDR=$(readelf -h "$CM_BIN" 2>/dev/null)
+if ! echo "$CM_HDR" | grep -qE "Class:.*ELF64"; then
   echo "::error::$CM_BIN is not ELF64"
   echo "verdict=B0_FAIL" > "$OUT/verdict.txt"
   exit 2
 fi
-if ! readelf -h "$CM_BIN" 2>/dev/null | grep -q "Machine: Advanced Micro Devices X86-64"; then
+if ! echo "$CM_HDR" | grep -qE "Machine:.*X86-64"; then
   echo "::error::$CM_BIN is not X86-64"
   echo "verdict=B0_FAIL" > "$OUT/verdict.txt"
   exit 2

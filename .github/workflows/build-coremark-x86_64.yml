@@ -71,10 +71,10 @@ jobs:
             echo "=== $b ==="
             HDR=$(readelf -h "$b")
             echo "$HDR" | grep -E "Class:|Machine:"
-            if ! echo "$HDR" | grep -q "Class:.*ELF64"; then
+            if ! echo "$HDR" | grep -qE "Class:.*ELF64"; then
               echo "::error::$b is not ELF64"; fail=1
             fi
-            if ! echo "$HDR" | grep -q "Machine: Advanced Micro Devices X86-64"; then
+            if ! echo "$HDR" | grep -qE "Machine:.*X86-64"; then
               echo "::error::$b is not X86-64"; fail=1
             fi
             if readelf -d "$b" 2>/dev/null | grep -q NEEDED; then
