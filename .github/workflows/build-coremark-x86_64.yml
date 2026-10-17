@@ -1,0 +1,130 @@
+name: Build CoreMark x86-64 static binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      coremark_sha:
+        description: 'eembc/coremark commit SHA (40 hex chars)'
+        required: true
+        default: '1f483d5b8316753a742cbf5590caf5bd0a4e4777'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate coremark_sha input
+        run: |
+          SHA='${{ inputs.coremark_sha }}'
+          if ! echo "$SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::coremark_sha must be 40 lowercase hex chars, got: $SHA"
+            exit 1
+          fi
+          echo "coremark_sha=$SHA" >> "$GITHUB_ENV"
+
+      - name: Checkout CoreMark at pinned SHA
+        run: |
+          mkdir coremark_repo
+          cd coremark_repo
+          git init
+          git remote add origin https://github.com/eembc/coremark.git
+          git fetch --depth=1 origin "$coremark_sha"
+          git checkout "$coremark_sha"
+          if ! git cat-file -e "${coremark_sha}^{commit}"; then
+            echo "::error::commit $coremark_sha does not exist"
+            exit 1
+          fi
+          echo "=== CoreMark commit ==="
+          git log -1 --format='sha: %H%nauthor: %an <%ae>%ndate: %ai%nsubject: %s'
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential binutils
+
+      - name: Build ITERATIONS=2000
+        run: |
+          cp -r coremark_repo build_2000
+          cd build_2000
+          make PORT_DIR=linux ITERATIONS=2000 CC=gcc LDFLAGS_END="-static" EXE=coremark_x86_64 -j"$(nproc)"
+          test -x coremark_x86_64
+          file coremark_x86_64
+
+      - name: Build ITERATIONS=10
+        run: |
+          cp -r coremark_repo build_10
+          cd build_10
+          make PORT_DIR=linux ITERATIONS=10 CC=gcc LDFLAGS_END="-static" EXE=coremark_x86_64_brief -j"$(nproc)"
+          test -x coremark_x86_64_brief
+          file coremark_x86_64_brief
+
+      - name: Verify ELF64 x86-64 and no NEEDED
+        run: |
+          fail=0
+          for b in build_2000/coremark_x86_64 build_10/coremark_x86_64_brief; do
+            echo "=== $b ==="
+            readelf -h "$b" | grep -E "Class:|Machine:"
+            if ! readelf -h "$b" | grep -q "Class:.*ELF64"; then
+              echo "::error::$b is not ELF64"; fail=1
+            fi
+            if ! readelf -h "$b" | grep -q "Machine: Advanced Micro Devices X86-64"; then
+              echo "::error::$b is not X86-64"; fail=1
+            fi
+            if readelf -d "$b" 2>/dev/null | grep -q NEEDED; then
+              echo "::error::$b has NEEDED entries (not static)"; fail=1
+            fi
+            echo "ok: $b"
+          done
+          [ $fail -eq 0 ] || exit 1
+
+      - name: Smoke test on runner (x86-64 native)
+        run: |
+          fail=0
+          for b in build_2000/coremark_x86_64 build_10/coremark_x86_64_brief; do
+            echo "=== running $b ==="
+            ./"$b" > "run_$(basename "$b").log" 2>&1
+            ec=$?
+            echo "exit_code=$ec"
+            cat "run_$(basename "$b").log"
+            if [ $ec -ne 0 ]; then
+              echo "::error::$b exited $ec"; fail=1
+            fi
+            if ! grep -q "Correct operation validated" "run_$(basename "$b").log"; then
+              echo "::error::$b did not print 'Correct operation validated'"; fail=1
+            fi
+          done
+          [ $fail -eq 0 ] || exit 1
+
+      - name: Compute SHA-256 and metadata
+        run: |
+          mkdir -p artifacts
+          cp build_2000/coremark_x86_64 artifacts/
+          cp build_10/coremark_x86_64_brief artifacts/
+          cd artifacts
+          sha256sum coremark_x86_64       > coremark_x86_64.sha256
+          sha256sum coremark_x86_64_brief > coremark_x86_64_brief.sha256
+          SHA_2000=$(cut -d' ' -f1 coremark_x86_64.sha256)
+          SHA_10=$(cut -d' ' -f1 coremark_x86_64_brief.sha256)
+          {
+            echo "coremark_repo=https://github.com/eembc/coremark"
+            echo "coremark_sha=${coremark_sha}"
+            echo "compiler=$(gcc --version | head -1)"
+            echo "build_flags=PORT_DIR=linux ITERATIONS=<2000|10> LDFLAGS_END=-static CC=gcc"
+            echo "coremark_x86_64_sha256=${SHA_2000}"
+            echo "coremark_x86_64_brief_sha256=${SHA_10}"
+            echo "build_runner=$(uname -a)"
+            echo "build_date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > coremark_metadata.txt
+          echo "=== metadata ==="
+          cat coremark_metadata.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coremark-x86_64-binaries
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 90

@@ -1,99 +1,90 @@
 <p align="center">
-  <img src="docs/img/stride_dynarec_logo.jpg" alt="Stride Dynarec" width="320">
+  <img src="assets/stride_dynarec_logo.jpg" alt="Stride Dynarec" width="320">
 </p>
 
 # Stride Dynarec
 
-Investigación y optimización de la traducción dinámica x86-64 → ARM64 para juegos de PC en Android (Snapdragon).
+Investigación aplicada sobre recompilación dinámica x86-64 → ARM64 en Android. Mide, comprende y —solo cuando la evidencia lo justifica— mejora el rendimiento, la estabilidad y el comportamiento térmico de la emulación x86-64 en ARM64.
 
-- **Estado:** Fase 0 — Reconocimiento
-- **Repo:** https://github.com/Hatblack2002/stride-dynarec
-- **Base:** Box64 @ `27860e6aee72dd33c2588d081652d6e9becc1089` (main)
-- **Dispositivo:** Samsung Galaxy S20 FE (variante por verificar)
+No promete compatibilidad universal con juegos de PC. No promete rendimiento gráfico. No promete superar a Box64 ni a FEX. Produce mediciones reproducibles y, si los datos lo respaldan, contribuciones concretas a la pila existente.
 
-## Misión
+## Estado
 
-Identificar y reducir costes innecesarios en la traducción dinámica x86-64 → ARM64. No es un emulador nuevo: audita y optimiza Box64.
+- **Fase:** B0 — primera ejecución funcional
+- **Pin Box64:** `v0.4.4` (`2f130fab1d6e1a4ee8a71dc60cfdfcc839ad192a`)
+- **Pin secundario:** `27860e6aee72dd33c2588d081652d6e9becc1089` (referencia, no base)
+- **Dispositivo:** Samsung Galaxy S20 FE 5G (SD865, Android 13, Termux, sin root)
 
-```
-inspeccionar → medir → formular hipótesis → proponer → implementar → validar → documentar
-```
+Ver `DEVICE_PROFILE.md` para el perfil completo.
 
 ## Estructura
 
 ```
 stride-dynarec/
-├── README.md
-├── .gitignore
-├── docs/
-│   ├── img/stride_dynarec_logo.jpg
-│   ├── DEVICE_PROFILE.md
-│   ├── ENVIRONMENT.md
-│   ├── BASELINE_PLAN.md
-│   ├── BUILD_AND_SMOKE_TEST.md       (Fase 1)
-│   ├── INSTRUMENTATION.md            (Fase 3)
-│   └── OPTIMIZATION_PROPOSAL_001.md  (Fase 4)
-├── reports/
-│   ├── BASELINE_REPORT.md            (Fase 2)
-│   ├── OPTIMIZATION_REPORT_001.md    (Fase 5)
-│   └── GAME_VALIDATION_001.md        (Fase 6)
-├── patches/
+├── .github/workflows/
+│   └── build-coremark-x86_64.yml     # Construye los dos binarios CoreMark
+├── benchmarks/                       # Solo binarios verificados con hash
+│   ├── coremark_x86_64
+│   ├── coremark_x86_64.sha256
+│   ├── coremark_x86_64_brief
+│   ├── coremark_x86_64_brief.sha256
+│   └── coremark_metadata.txt
 ├── scripts/
-│   ├── bootstrap_box64.sh
-│   └── device_profile_probe.sh
-└── third_party/                      (no versionado, ver .gitignore)
-    └── box64/                        (clonado por bootstrap_box64.sh)
+│   ├── bootstrap_box64.sh            # Clona Box64 en v0.4.4
+│   ├── device_profile_probe.sh       # Captura el perfil del dispositivo
+│   ├── h1_executor.sh                # Fase 1 + 3 + 4 de B0
+│   └── lib_timing.sh                 # Helpers de reloj y sensores
+├── results/
+│   └── b0_<TS>/                      # Generado por h1_executor.sh
+├── third_party/                      # Ignorado. Clonado por bootstrap.
+├── DEVICE_PROFILE.md
+└── README.md
 ```
 
-## Reproducir el entorno
+## Reproducir B0
+
+Requisitos en Termux: `pkg install -y git cmake make gcc binutils python`
 
 ```bash
 git clone https://github.com/Hatblack2002/stride-dynarec.git
 cd stride-dynarec
-bash scripts/bootstrap_box64.sh        # clona Box64 en el commit fijado
-bash scripts/device_profile_probe.sh   # en Termux, en el dispositivo
+
+# 1. Obtener los binarios de CoreMark (workflow_dispatch)
+#    Disparar el workflow desde GitHub Actions y descargar el artefacto
+#    coremark-x86_64-binaries. Colocar los 5 archivos en benchmarks/.
+
+# 2. Ejecutar B0
+bash scripts/h1_executor.sh
+
+# 3. Veredicto
+cat results/b0_*/verdict.txt
 ```
-
-## Base de referencia
-
-| Campo | Valor |
-|---|---|
-| Proyecto | Box64 |
-| URL | https://github.com/ptitSeb/box64 |
-| Commit | `27860e6aee72dd33c2588d081652d6e9becc1089` |
-| Fecha | 2026-10-17 |
-| Licencia | MIT |
-
-## Proyectos de referencia (sin modificación en Fase 0)
-
-| Proyecto | URL | Rol |
-|---|---|---|
-| Box64 | https://github.com/ptitSeb/box64 | Traducción x86-64 → ARM64 (base) |
-| FEX-Emu | https://github.com/FEX-Emu/FEX | Alternativa de traducción de CPU |
-| Wine | https://gitlab.winehq.org/wine/wine | API de Windows |
-| DXVK | https://github.com/doitsujin/dxvk | D3D → Vulkan |
 
 ## Reglas
 
-- No inventar resultados, archivos, funciones ni comandos.
-- No declarar compilado lo no compilado, ni probado lo no probado.
-- No mezclar variables en una comparación sin documentar.
-- No tocar barreras de memoria ni comprobaciones de seguridad sin análisis riguroso.
-- Respetar licencias upstream y conservar copyright.
+- Ningún resultado se declara ejecutado sin log que lo demuestre.
+- B1 y B2 bloqueadas hasta B0_OK.
+- Wine, DXVK, Turnip, Mafia II, FEX, optimizaciones de dynarec y parches a Box64 están fuera de alcance en esta fase.
+- No se mezclan variables en una comparación sin documentar.
+- No se eliminan comprobaciones de seguridad ni se alteran semánticas de memoria sin análisis riguroso.
 - Toda modificación se documenta y se asocia a un commit independiente.
 
-## Estado actual
+## B0 — Criterios de aprobación
 
-Completado (Fase 0 parcial):
-- Auditoría real del dynarec ARM64 de Box64 (`src/dynarec/arm64/`, `dynarec_native.c:FillBlock64`, `dynablock.c:DBGetBlock`, `dynarec.c:EmuRun`).
-- Verificación de `BOX64_DYNACACHE` y variables asociadas en `docs/USAGE.md`.
-- Verificación de rutas de compilación Termux (CHRoot/PRoot vs nativo).
-- Documentos iniciales: `DEVICE_PROFILE.md`, `ENVIRONMENT.md`, `BASELINE_PLAN.md`.
+Siete condiciones obligatorias, todas deben cumplirse:
 
-Pendiente:
-- Salida de `device_profile_probe.sh` ejecutado en el dispositivo.
-- `BUILD_AND_SMOKE_TEST.md` (Fase 1).
+| # | Condición | Verificación |
+|---|---|---|
+| 1 | `v0.4.4` resuelto a hash de 40 hex | `git rev-parse v0.4.4` en el log |
+| 2 | `box64` generado y ejecutable | `[ -x build/box64 ]` + `--version` |
+| 3 | `coremark_x86_64` es ELF64 x86-64 | `readelf -h` muestra `Class: ELF64`, `Machine: Advanced Micro Devices X86-64` |
+| 4 | `coremark_x86_64` no tiene `NEEDED` | `readelf -d` sin entradas NEEDED |
+| 5 | SHA-256 coincide con el manifiesto | `sha256sum -c` retorna 0 |
+| 6 | Ejecución termina con `exit_code==0` | Registrado en el log |
+| 7 | Log contiene `Correct operation validated` | `grep` en `b0_run.log` |
+
+Un fallo en cualquiera produce `B0_FAIL`. No hay aprobación parcial.
 
 ## Licencia
 
-El contenido propio de Stride Dynarec se publica bajo MIT. El clon de Box64 en `third_party/` mantiene su licencia MIT original.
+MIT. Ver `LICENSE`. Box64 (en `third_party/`) mantiene su licencia MIT original.

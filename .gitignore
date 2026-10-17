@@ -1,6 +1,6 @@
-# .gitignore
 third_party/
 build/
+results/b0_*/
 *.o
 *.so
 *.a
