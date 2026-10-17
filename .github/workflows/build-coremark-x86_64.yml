@@ -69,11 +69,12 @@ jobs:
           fail=0
           for b in build_2000/coremark_x86_64 build_10/coremark_x86_64_brief; do
             echo "=== $b ==="
-            readelf -h "$b" | grep -E "Class:|Machine:"
-            if ! readelf -h "$b" | grep -q "Class:.*ELF64"; then
+            HDR=$(readelf -h "$b")
+            echo "$HDR" | grep -E "Class:|Machine:"
+            if ! echo "$HDR" | grep -q "Class:.*ELF64"; then
               echo "::error::$b is not ELF64"; fail=1
             fi
-            if ! readelf -h "$b" | grep -q "Machine: Advanced Micro Devices X86-64"; then
+            if ! echo "$HDR" | grep -q "Machine: Advanced Micro Devices X86-64"; then
               echo "::error::$b is not X86-64"; fail=1
             fi
             if readelf -d "$b" 2>/dev/null | grep -q NEEDED; then
