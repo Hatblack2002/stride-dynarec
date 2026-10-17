@@ -62,6 +62,8 @@ write_verdict() {
   {
     echo "verdict=$state"
     [ -n "${PHASE:-}" ] && echo "phase=$PHASE"
+    [ -n "${ROUTE:-}" ] && echo "build_route=$ROUTE"
+    [ -n "${ENV_ROUTE:-}" ] && echo "detected_env=$ENV_ROUTE"
     echo "ts_utc=$TS"
     [ -n "${BOX64_HASH:-}" ] && echo "box64_hash=$BOX64_HASH"
     [ -n "${BOX64_TAG:-}" ] && echo "box64_tag=$BOX64_TAG"
@@ -143,6 +145,7 @@ echo "sha256sum: $(sha256sum --version | head -1)"
   echo "pwd=$HERE"
   echo "TERMUX_VERSION=${TERMUX_VERSION:-n/a}"
   echo "PREFIX=${PREFIX:-n/a}"
+  echo "STRIDE_FORCE_ROUTE=${STRIDE_FORCE_ROUTE:-n/a}"
   echo "git=$(git --version)"
   echo "gcc=$(gcc --version | head -1)"
   echo "cmake=$(cmake --version | head -1)"
@@ -232,6 +235,90 @@ cd "$HERE"
 # ============================================================
 set_phase "build_box64"
 
+# Detect the execution environment and select the appropriate CMake route.
+#
+# docs/COMPILE.md of Box64 v0.4.4 documents two routes for Android devices:
+#
+#   Ruta A (CHRoot/PRoot Linux ARM64):
+#     -DARM64=1 -DCMAKE_C_COMPILER=gcc -DBAD_SIGNAL=ON
+#     Requires a real Linux ARM64 filesystem (glibc, full POSIX headers).
+#     Works inside proot-distro ubuntu/debian, or in a real ARM64 Linux box.
+#     Produces a binary linked against glibc that runs Linux x86-64 binaries.
+#
+#   Ruta B (Termux nativo):
+#     -DTERMUX=1 -DCMAKE_C_COMPILER=clang
+#     Compiles against bionic libc with libandroid-sysv-semaphore and
+#     libandroid-spawn. The official doc warns: "Box64 in native termux is
+#     experimental and won't run linux binaries!"
+#
+# The previous version of this script always used Ruta A flags, which fails
+# in Termux nativo because gcc there links against bionic and the glibc
+# headers are missing. We now detect the environment explicitly:
+#
+#   - TERMUX_VERSION set OR PREFIX contains com.termux  -> Ruta B (Termux)
+#   - /etc/debian_version or /etc/redhat-release present -> Ruta A (CHRoot)
+#   - otherwise -> Ruta A (default, may fail; the user can override via
+#     environment variable STRIDE_FORCE_ROUTE=A|B)
+
+ENV_ROUTE="unknown"
+
+if [ -n "${STRIDE_FORCE_ROUTE:-}" ]; then
+  ENV_ROUTE="forced-$STRIDE_FORCE_ROUTE"
+  ROUTE="$STRIDE_FORCE_ROUTE"
+elif [ -n "${TERMUX_VERSION:-}" ] || \
+     ( [ -n "${PREFIX:-}" ] && echo "$PREFIX" | grep -q "com.termux" ); then
+  ENV_ROUTE="termux-native"
+  ROUTE="B"
+elif [ -f /etc/debian_version ] || [ -f /etc/redhat-release ] || [ -f /etc/arch-release ]; then
+  ENV_ROUTE="linux-chroot"
+  ROUTE="A"
+else
+  ENV_ROUTE="unknown"
+  ROUTE="A"
+fi
+
+echo "=== Environment detection ==="
+echo "TERMUX_VERSION: ${TERMUX_VERSION:-n/a}"
+echo "PREFIX:         ${PREFIX:-n/a}"
+echo "STRIDE_FORCE_ROUTE: ${STRIDE_FORCE_ROUTE:-n/a}"
+echo "detected_env:   $ENV_ROUTE"
+echo "selected_route: $ROUTE"
+echo ""
+
+if [ "$ROUTE" = "B" ]; then
+  # Ruta B — Termux nativo. Requires clang and Android-specific packages.
+  echo "=== Ruta B prerequisites (Termux native) ==="
+  for pkg in libandroid-sysv-semaphore libandroid-spawn; do
+    # pkg list-installed returns 0 even if grep finds nothing, so we check the line.
+    if ! pkg list-installed 2>/dev/null | grep -q "^${pkg}/"; then
+      echo "::error::Missing Termux package: $pkg"
+      echo "  Install with: pkg install -y $pkg"
+      fail "B0_FAIL_prerequisites"
+    fi
+    echo "  OK: $pkg installed"
+  done
+  CMAKE_C_COMPILER="clang"
+  CMAKE_FLAGS=(
+    -DTERMUX=1
+    -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER"
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  )
+  echo "=== CMake configuration: Ruta B (Termux native) ==="
+  printf "  %s\n" "${CMAKE_FLAGS[@]}"
+else
+  # Ruta A — CHRoot/PRoot Linux ARM64. Requires gcc and glibc.
+  CMAKE_C_COMPILER="gcc"
+  CMAKE_FLAGS=(
+    -DARM64=1
+    -DCMAKE_C_COMPILER="$CMAKE_C_COMPILER"
+    -DBAD_SIGNAL=ON
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  )
+  echo "=== CMake configuration: Ruta A (CHRoot/PRoot Linux ARM64) ==="
+  printf "  %s\n" "${CMAKE_FLAGS[@]}"
+fi
+echo ""
+
 BUILD_DIR="$HERE/third_party/box64/build"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
@@ -239,12 +326,7 @@ cd "$BUILD_DIR"
 # cmake: explicit capture. set -e is disabled around the call so a failure
 # falls through to the if-block instead of terminating the script.
 set +e
-cmake .. \
-  -DARM64=1 \
-  -DCMAKE_C_COMPILER=gcc \
-  -DBAD_SIGNAL=ON \
-  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-  > "$OUT/cmake.log" 2>&1
+cmake .. "${CMAKE_FLAGS[@]}" > "$OUT/cmake.log" 2>&1
 CMAKE_EXIT=$?
 set -e
 echo "cmake exit=$CMAKE_EXIT"
