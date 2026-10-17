@@ -1,24 +1,16 @@
-# Perfil del dispositivo objetivo
+# Perfil del dispositivo
 
-**Documento:** `docs/DEVICE_PROFILE.md`
-**Proyecto:** Stride Dynarec
-**Fase:** 0 — Reconocimiento
-**Fecha:** 2026-10-18
+Fase 0 — Reconocimiento. 2026-10-18.
 
----
+El agente no tiene acceso al dispositivo. Tres categorías de datos:
 
-## 1. Advertencia de verificación
+- `[DECLARADO]` — por el responsable.
+- `[PENDIENTE]` — pendiente de verificar con `scripts/device_profile_probe.sh`.
+- `[REFERENCIA]` — fuente pública, no verificada para la unidad concreta.
 
-> **El agente NO tiene acceso físico al dispositivo objetivo.**
-> La información de este documento se divide en dos categorías claramente separadas:
->
-> - **Datos declarados por el responsable:** marcados como `[DECLARADO]`.
-> - **Datos verificados en el dispositivo:** marcados como `[VERIFICADO]`. Hasta que el responsable no ejecute los comandos de la sección 5 y devuelva los resultados, esta categoría estará vacía o incompleta.
-> - **Datos inferidos de fuentes públicas:** marcados como `[REFERENCIA]` con la URL de origen.
->
-> **No se asume nada a partir del nombre comercial del teléfono.** El Galaxy S20 FE se comercializó en al menos dos variantes principales con SoC distinto. Esto afecta directamente a las opciones de compilación de Box64.
+El Galaxy S20 FE tiene al menos dos variantes con SoC distinto (SD865 vs Exynos 990). Esto cambia las flags de compilación de Box64 (`-D SD865=1` vs `-D ARM64=1`).
 
-## 2. Datos declarados por el responsable
+## 1. Datos declarados
 
 | Campo                | Valor                                | Estado        |
 |----------------------|--------------------------------------|---------------|
@@ -81,94 +73,17 @@ Fuentes:
 
 Esto activa la sintonización del dynarec ARM64 para el núcleo Cortex-A77/A55 de Kona (SD865). No implica aceleración mágica: solo ajusta flags de compilación y, potencialmente, decisiones de código condicionadas por arquitectura.
 
-## 5. Comandos reproducibles para verificar el hardware
+## 5. Verificación del hardware
 
-El responsable debe ejecutar este bloque **desde Termux en el propio teléfono** y copiar/pegar el texto resultante de vuelta al agente. No requiere root. No instala nada.
+El responsable ejecuta desde Termux:
 
 ```bash
-# ============================================================
-# Stride Dynarec — Verificación de perfil de dispositivo
-# Ejecutar desde Termux. Sin root. Sin instalar nada.
-# ============================================================
-echo "===== STRIDE_DYNAREC_DEVICE_PROFILE ====="
-echo "[fecha]           $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-echo "[host]            $(hostname 2>/dev/null || echo n/a)"
-echo ""
-
-echo "----- 1. Modelo exacto y variante -----"
-echo "ro.product.model          = $(getprop ro.product.model)"
-echo "ro.product.name           = $(getprop ro.product.name)"
-echo "ro.product.device         = $(getprop ro.product.device)"
-echo "ro.product.brand          = $(getprop ro.product.brand)"
-echo "ro.boot.hwc_model         = $(getprop ro.boot.hwc_model)"
-echo "ro.boot.hwc_platform      = $(getprop ro.boot.hwc_platform)"
-echo "ro.hardware               = $(getprop ro.hardware)"
-echo ""
-
-echo "----- 2. SoC -----"
-echo "ro.soc.manufacturer       = $(getprop ro.soc.manufacturer)"
-echo "ro.soc.model              = $(getprop ro.soc.model)"
-echo "ro.board.platform         = $(getprop ro.board.platform)"
-echo ""
-
-echo "----- 3. Android -----"
-echo "ro.build.version.release  = $(getprop ro.build.version.release)"
-echo "ro.build.version.sdk      = $(getprop ro.build.version.sdk)"
-echo "ro.build.id               = $(getprop ro.build.id)"
-echo "ro.product.cpu.abilist    = $(getprop ro.product.cpu.abilist)"
-echo ""
-
-echo "----- 4. Memoria -----"
-head -3 /proc/meminfo
-echo ""
-
-echo "----- 5. Almacenamiento -----"
-df -h "$HOME" 2>/dev/null
-df -h /data 2>/dev/null
-echo ""
-
-echo "----- 6. CPU (núcleos y frecuencias máximas) -----"
-echo "nproc                    = $(nproc)"
-for c in /sys/devices/system/cpu/cpu*/cpufreq/cpuinfo_max_freq; do
-  [ -r "$c" ] && echo "$c = $(cat $c)  (= $(($(cat $c))/1000)) MHz)"
-done 2>/dev/null
-echo ""
-
-echo "----- 7. GPU / GLES (parcial, sin root) -----"
-dumpsys SurfaceFlinger 2>/dev/null | grep -E "GLES|GL_VERSION|GL_RENDERER" | head -5
-echo ""
-
-echo "----- 8. Termux -----"
-echo "TERMUX_VERSION            = ${TERMUX_VERSION:-n/a}"
-echo "PREFIX                    = ${PREFIX:-n/a}"
-command -v termux-info >/dev/null 2>&1 && termux-info | head -20 || echo "(termux-info no disponible)"
-echo ""
-
-echo "----- 9. Toolchain disponible en Termux -----"
-for t in clang clang++ gcc g++ make cmake git curl wget pkg-config; do
-  if command -v "$t" >/dev/null 2>&1; then
-    printf "  %-12s OK   %s\n" "$t" "$(command -v $t)"
-  else
-    printf "  %-12s NO\n" "$t"
-  fi
-done
-echo ""
-
-echo "----- 10. Versiones de cadenas de herramientas -----"
-clang --version 2>/dev/null | head -1
-gcc --version 2>/dev/null | head -1
-cmake --version 2>/dev/null | head -1
-git --version 2>/dev/null
-echo ""
-
-echo "----- 11. Box64 ya instalado (si existe) -----"
-command -v box64 >/dev/null 2>&1 && box64 --version 2>&1 | head -5 || echo "(box64 no en PATH)"
-echo ""
-
-echo "===== END ====="
+bash scripts/device_profile_probe.sh
 ```
 
-## 6. Condiciones de prueba que deben registrarse en cada experimento
+Sin root, sin instalar nada. Salida: texto plano para pegar de vuelta al agente.
+
+## 6. Condiciones de prueba por experimento
 
 Cada vez que se ejecute una prueba, **debe registrarse** en el informe correspondiente:
 

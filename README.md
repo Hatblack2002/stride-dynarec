@@ -7,12 +7,13 @@
 Investigación y optimización de la traducción dinámica x86-64 → ARM64 para juegos de PC en Android (Snapdragon).
 
 - **Estado:** Fase 0 — Reconocimiento
+- **Repo:** https://github.com/Hatblack2002/stride-dynarec
 - **Base:** Box64 @ `27860e6aee72dd33c2588d081652d6e9becc1089` (main)
-- **Dispositivo de referencia:** Samsung Galaxy S20 FE (SM-G780F / SM-G781B/U/N — por verificar)
+- **Dispositivo:** Samsung Galaxy S20 FE (variante por verificar)
 
 ## Misión
 
-Identificar y reducir costes innecesarios de ejecución en la traducción dinámica de CPU x86-64 a ARM64. No es un emulador nuevo: audita y optimiza componentes existentes (Box64). Primero evidencia, después optimización.
+Identificar y reducir costes innecesarios en la traducción dinámica x86-64 → ARM64. No es un emulador nuevo: audita y optimiza Box64.
 
 ```
 inspeccionar → medir → formular hipótesis → proponer → implementar → validar → documentar
@@ -47,7 +48,7 @@ stride-dynarec/
 ## Reproducir el entorno
 
 ```bash
-git clone https://github.com/<owner>/stride-dynarec.git
+git clone https://github.com/Hatblack2002/stride-dynarec.git
 cd stride-dynarec
 bash scripts/bootstrap_box64.sh        # clona Box64 en el commit fijado
 bash scripts/device_profile_probe.sh   # en Termux, en el dispositivo
